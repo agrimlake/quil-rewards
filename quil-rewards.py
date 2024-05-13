@@ -197,7 +197,7 @@ def load_peer_ids(args):
             with open(args.file, 'r') as file:
                 peer_ids = [line.strip() for line in file]
         except FileNotFoundError:
-            raise ValueError(f"Le fichier {args.file} n'a pas été trouvé.")
+            raise ValueError(f"The file {args.file} not found")
     return peer_ids
 
 def print_all_peers(all_data):
@@ -216,7 +216,7 @@ def compute_all_quil(all_data, last_update):
     active_peers, inactive_peers, recent_inactive_peers, banned_peers = get_active_peers_stats(all_data, last_update)
 
     print(f"==============================================================================\n")
-    print(f"info: Last data update from {url} : {last_update}")
+    print(f"info: Last data update from {url} : {last_update} PDT")
     print(f"Info: This is the total rewards distribution for all nodes...\n")
     print(f"\tTotal created Peers : {format_with_separator(len(all_data))} Nodes")
 
@@ -272,9 +272,9 @@ def main():
         print(e)
         return
 
-    parser = argparse.ArgumentParser(description='Recherche vos peerId dans les rewards de QUilibrium')
-    parser.add_argument('--file', type=str, default='peers.lst', help='Fichier contenant les PeerId (un par ligne)')
-    parser.add_argument('--peer_ids', type=str, nargs='+', help='Liste de PeerId séparés par des espaces')
+    parser = argparse.ArgumentParser(description='Find your rewards on Quilibrium website')
+    parser.add_argument('--file', type=str, default='peers.lst', help='File with PeerIds (One by line)')
+    parser.add_argument('--peer_ids', type=str, nargs='+', help='List of PeerId separeted by space')
     args = parser.parse_args()
 
     peer_ids = load_peer_ids(args)
@@ -290,7 +290,7 @@ def main():
         if peer:
             total_existing_balance, total_reward = print_peer_info(peer, total_existing_balance, total_reward)
         else:
-            print(f"Aucun pair trouvé avec l'ID: {peer_id}")
+            print(f"No peer found with ID: {peer_id}")
 
     print(f"==>\tTotal Existing Balance : {total_existing_balance} QUIL")
     print(f"==>\tTotal Reward           : {total_reward} QUIL")
