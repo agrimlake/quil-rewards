@@ -31,23 +31,23 @@ Modify the peers.lst file and add the PeerIds of the peers you want to search fo
 Run the script using one of the following methods:
 Without arguments (will use peers.lst by default):
 ```bash 
-python quil-rewards.py
+python3 quil-rewards.py
 ```
 
 By specifying PeerIds directly as arguments:
 ```bash 
-python quil-rewards.py --peer_ids <peer_id_1> <peer_id_2> ...
+python3 quil-rewards.py --peer_ids <peer_id_1> <peer_id_2> ...
 ```
 
 By specifying a file containing PeerIds:
 ```bash 
-python quil-rewards.py --file <path_to_file>
+python3 quil-rewards.py --file <path_to_file>
 ```
 The script will display the reward information for each found peer, as well as global statistics on the reward distribution.
 
 ## Usage example
 ```bash 
-python quil-rewards.py --peer_ids QmaBCDEF1234567890 QmXYZ0987654321
+python3 quil-rewards.py --peer_ids QmaBCDEF1234567890 QmXYZ0987654321
 ```
 
 This will search for reward information for the peers with PeerIds QmaBCDEF1234567890 and QmXYZ0987654321 and display the corresponding details.
