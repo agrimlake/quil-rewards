@@ -1,43 +1,26 @@
 import requests
-import re
-import json
 import argparse
 from dateutil import parser
-from datetime import datetime
-from datetime import datetime, timedelta
+import re
 
 url = "https://quilibrium.com"
 
-def format_with_separator(number, separator=' '):
+def format_with_separator(number, separator=','):
     """
-    Formats a number with a thousands separator.
+    Format a number with a thousands separator.
 
     Args:
         number (float or int): The number to format.
-        separator (str, optional): The character to use as the thousands separator. Default is ' '.
+        separator (str, optional): The character to use as the thousands separator. Default is ','.
 
     Returns:
-        str: The number formatted with a thousands separator.
+        str: The formatted number with a thousands separator.
     """
-    number_str = str(number)
-    parts = number_str.split('.')
-    integer_part = parts[0]
-    decimal_part = parts[1] if len(parts) > 1 else ''
-
-    reversed_integer_part = integer_part[::-1]
-    formatted_integer_part = separator.join([reversed_integer_part[i:i+3] for i in range(0, len(reversed_integer_part), 3)])
-    formatted_integer_part = formatted_integer_part[::-1]
-
-    if decimal_part:
-        formatted_number = f"{formatted_integer_part}.{decimal_part}"
-    else:
-        formatted_number = formatted_integer_part
-
-    return formatted_number
+    return f"{number:,.2f}".replace(",", separator)
 
 def find_javascript_file_url(url):
     """
-    Finds the URL of the main JavaScript file on the given website.
+    Find the URL of the main JavaScript file on the given website.
 
     Args:
         url (str): The URL of the website.
@@ -56,70 +39,33 @@ def find_javascript_file_url(url):
     else:
         raise ValueError("JavaScript file not found.")
 
-def convert_numeric_values(obj):
-    if isinstance(obj, dict):
-        return {k: convert_numeric_values(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_numeric_values(v) for v in obj]
-    elif isinstance(obj, str):
-        if obj.isdigit():
-            return int(obj)
-        else:
-            try:
-                return float(obj)
-            except ValueError:
-                return obj
-    else:
-        return obj
-
-def extract_peers(script_content):
-    pattern = r"\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*peerId(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}"
-    matches = re.findall(pattern, script_content)
-
-    peers_dict = {}
-    for match in matches:
-        # Ajouter des guillemets doubles autour des clés
-        match = re.sub(r"(\w+):", r'"\1":', match)
-
-        # Remplacer les valeurs booléennes !0 et !1 par false et true
-        match = match.replace("!0", "true").replace("!1", "false")
-
-        # Supprimer les virgules de fin inutiles
-        match = re.sub(r",\s*}", "}", match)
-
-        try:
-            peer_data = json.loads(match)
-            peer_id = peer_data.get("peerId")
-            if peer_id:
-                # Convertir les valeurs numériques en entiers ou en flottants
-                peer_data = convert_numeric_values(peer_data)
-                if peer_id in peers_dict:
-                    peers_dict[peer_id].update(peer_data)
-                else:
-                    peers_dict[peer_id] = peer_data
-        except json.JSONDecodeError:
-            # Ignorer les correspondances invalides
-            pass
-
-    return list(peers_dict.values())
-
-
-def extract_data_from_javascript(url):
+def load_json_data(url):
     """
-    Extracts data from the main JavaScript file on the given website.
+    Load JSON data from the specified URL.
+
+    Args:
+        url (str): The URL of the JSON file.
+
+    Returns:
+        list: A list of dictionaries containing the data.
+    """
+    response = requests.get(url)
+    data = response.json()
+    return data
+
+def extract_last_update_from_javascript(url):
+    """
+    Extract the last update date from the main JavaScript file on the given website.
 
     Args:
         url (str): The URL of the main JavaScript file.
 
     Returns:
-        list: A list of dictionaries containing the extracted data.
+        datetime: The last update date.
     """
     response = requests.get(url)
     script_content = response.text
 
-    all_data = extract_peers(script_content)
-
-    # Rechercher la date de dernière mise à jour
     last_update_match = re.search(r'Rewards \(Last Updated: ([\d-]+ \d+:\d+[AP]M \w+)\)', script_content)
     if last_update_match:
         last_update_str = last_update_match.group(1)
@@ -128,61 +74,66 @@ def extract_data_from_javascript(url):
     else:
         last_update = None
 
-    return all_data, last_update
+    return last_update
 
-def get_active_peers_stats(all_data, last_update):
+def get_peer_stats(all_data):
     active_peers = []
     banned_peers = []
     inactive_peers = []
-    recent_inactive_peers = []
+    inactive_1418_peers = []
+    new_peers = []
 
-    current_month = last_update.strftime("%b").lower()
-    current_month_presence = f"{current_month}Presence"
-    previous_month = (last_update.replace(day=1) - timedelta(days=1)).strftime("%b").lower()
+    for peer_id, peer_data in all_data.items():
+        if 'criteria' in all_data[peer_id]:
+            criteria = all_data[peer_id]['criteria']
+        else:
+            criteria = "N/A"
+        # reward = peer_data.get('total_reward', 0)
+        existing_reward = peer_data.get('existing_reward', 0)
+        rewards_reward = peer_data.get('rewards_reward', 0)
 
-    previous_month_presence = f"{previous_month}Presence"
-
-    for peer in all_data:
-        criteria = peer.get('criteria', 'N/A')
-        reward = peer.get('reward', 0)
+        if 'pre_1418_reward' in all_data[peer_id]:
+            pre_1418_reward = all_data[peer_id]['pre_1418_reward']
+        else:
+            pre_1418_reward = 0
+        
+        if "post_1418_reward" in all_data[peer_id]:
+            post_1418_reward = all_data[peer_id]['post_1418_reward']
+        else:
+            post_1418_reward = 0
 
         if criteria != 'N/A':
-            banned_peers.append(peer)
+            banned_peers.append(peer_id)
+        elif existing_reward == 0 and rewards_reward == 0 and (pre_1418_reward > 0 or post_1418_reward > 0):    
+            new_peers.append(peer_id)
+        elif post_1418_reward == 0 and pre_1418_reward == 0:
+            inactive_peers.append(peer_id)
+        elif pre_1418_reward != 0 and post_1418_reward == 0:
+            inactive_1418_peers.append(peer_id)
+        elif post_1418_reward != 0:
+            active_peers.append(peer_id)
         else:
-            current_month_active = peer.get(current_month_presence, False)
-            previous_month_active = peer.get(previous_month_presence, False)
+            print(f"Failure ??? ")
+            print(f"{all_data[peer_id]}")
 
-            if reward == 0:
-                inactive_peers.append(peer)
-            elif not current_month_active:
-                if previous_month_active:
-                    recent_inactive_peers.append(peer)
-                else:
-                    inactive_peers.append(peer)
-            else:
-                active_peers.append(peer)
-
-    return len(active_peers), len(inactive_peers), len(recent_inactive_peers), len(banned_peers)
+    return len(active_peers), len(inactive_peers), len(inactive_1418_peers), len(banned_peers), len(new_peers)
 
 def search_peer_by_id(peer_id, all_data):
     """
-    Searches for a peer by its PeerId in the given data.
+    Search for a peer by its PeerId in the provided data.
 
     Args:
         peer_id (str): The PeerId to search for.
-        all_data (list): A list of dictionaries containing the data.
+        all_data (dict): A dictionary containing the peer data.
 
     Returns:
         dict or None: The dictionary containing the peer data if found, None otherwise.
     """
-    for peer in all_data:
-        if peer.get("peerId") == peer_id:
-            return peer
-    return None
+    return all_data.get(peer_id)
 
 def load_peer_ids(args):
     """
-    Loads the PeerIds from the provided file or command-line arguments.
+    Load PeerIds from the provided file or command-line arguments.
 
     Args:
         args (argparse.Namespace): The parsed command-line arguments.
@@ -197,84 +148,170 @@ def load_peer_ids(args):
             with open(args.file, 'r') as file:
                 peer_ids = [line.strip() for line in file]
         except FileNotFoundError:
-            raise ValueError(f"The file {args.file} not found")
+            raise ValueError(f"The file {args.file} was not found.")
     return peer_ids
-
-def print_all_peers(all_data):
-    for peer in all_data:
-        print_peer_info(peer, 0, 0)
 
 def compute_all_quil(all_data, last_update):
     """
-    Computes and prints the total rewards distribution for all nodes.
+    Compute and display the total rewards distribution for all nodes.
 
     Args:
-        all_data (list): A list of dictionaries containing the data.
+        all_data (dict): A dictionary containing the peer data.
+        last_update (datetime): The last update date.
     """
-    reward = sum(peer.get('reward', 0) for peer in all_data)
-    existing_balance = sum(peer.get('existingBalance', 0) for peer in all_data)
-    active_peers, inactive_peers, recent_inactive_peers, banned_peers = get_active_peers_stats(all_data, last_update)
+    total_reward = 0
+    total_existing_balance = 0
+    pre1418_balance = 0
+    post1418_balance = 0
 
-    print(f"==============================================================================\n")
-    print(f"info: Last data update from {url} : {last_update} PDT")
-    print(f"Info: This is the total rewards distribution for all nodes...\n")
-    print(f"\tTotal created Peers : {format_with_separator(len(all_data))} Nodes")
+    for peer in all_data.keys():
+        if "total_reward" in all_data[peer]:
+            total_reward += all_data[peer]["total_reward"]
+            total_existing_balance += all_data[peer]["existing_reward"]
+            pre1418_balance += all_data[peer]["pre_1418_reward"]
+            post1418_balance += all_data[peer]["post_1418_reward"]
+    
+    active_peers, inactive_peers, inactive_1418_peers, banned_peers, new_peers = get_peer_stats(all_data)
 
-    print(f"\t\tActive Peers          ( == Month      )  : {format_with_separator(active_peers)}")
-    print(f"\t\tRecent Inactive Peers ( <= Month - 1  )  : {format_with_separator(recent_inactive_peers)}")
-    print(f"\t\tInactive Peers        ( >= Month - 2  )  : {format_with_separator(inactive_peers)}")
-    print(f"\t\tBanned Peers                             : {format_with_separator(banned_peers)}")
-    print("")
+    print("=" * 80)
+    print(f"Info: Last data update from {url}: {last_update}")
+    print("Info: This is the total rewards distribution for all nodes...")
+    print(f"\tTotal created Peers: {format_with_separator(len(all_data))} Nodes")
 
-    print(f"\tDistributed Rewards for all nodes          : {format_with_separator(reward, ',')} QUIL")
-    print(f"\tDistributed Rewards in 2023                : {format_with_separator(existing_balance, ',')} QUIL")
+    print(f"\t\tActive Peers            : {format_with_separator(active_peers)}")
+    print(f"\t\tInactive Peers < 12 May : {format_with_separator(inactive_peers)}")
+    print(f"\t\tInactive Peers < 1.4.18 : {format_with_separator(inactive_1418_peers)}")
+    print(f"\t\tNew Peers > 12 May      : {format_with_separator(new_peers)}")
+    print(f"\t\tBanned Peers            : {format_with_separator(banned_peers)}")
+    print()
+
+    print(f"\tDistributed Rewards for all nodes  : {format_with_separator(total_reward)} QUIL")
+    print(f"\tDistributed Rewards before 12 May  : {format_with_separator(total_existing_balance + pre1418_balance)} QUIL")
     print("\t----")
-    print(f"\tTotal rewards for {format_with_separator(len(all_data))} Nodes : {format_with_separator(existing_balance + reward, ',')} QUIL\n")
-    print(f"==============================================================================\n")
+    print(f"\tTotal rewards for {format_with_separator(len(all_data))} Nodes: {format_with_separator(total_reward)} QUIL")
+    print("=" * 80)
 
-def print_peer_info(peer, total_existing_balance, total_reward):
+def print_peer_info(peer_id, peer_data):
     """
-    Prints the information for a given peer and updates the total existing balance and reward.
+    Print the information for a given peer.
 
     Args:
-        peer (dict): The dictionary containing the peer data.
-        total_existing_balance (float): The total existing balance to update.
-        total_reward (float): The total reward to update.
+        peer_id (str): The PeerId of the peer.
+        peer_data (dict): The dictionary containing the peer data.
+    """
+    print(f"Peer ID: {peer_id}")
+    
+    existing_reward = peer_data.get('existing_reward', 0)
+    rewards_reward = peer_data.get('rewards_reward', 0)
+    pre_1418_reward = peer_data.get('pre_1418_reward', 0)
+    post_1418_reward = peer_data.get('post_1418_reward', 0)
+    
+    print(f"Rewards before 2024 (Existing)                   : {format_with_separator(existing_reward)}")
+    print(f"Rewards between January and May 12               : {format_with_separator(rewards_reward)}")
+    print(f"Rewards between May 12 and v1.4.18               : {format_with_separator(pre_1418_reward)}")
+    print(f"Rewards after v1.4.18 until today                : {format_with_separator(post_1418_reward)}")
+    
+    total_reward = existing_reward + rewards_reward + pre_1418_reward + post_1418_reward
+    print(f"Total rewards                                    : {format_with_separator(total_reward)}")
+    
+    criteria = peer_data.get('criteria', 'N/A')
+    if criteria != 'N/A':
+        print(f"Criteria: {criteria}")
+        
+    print("---")
+    return existing_reward, rewards_reward, pre_1418_reward, post_1418_reward
+
+def merge_rewards_data(existing_data, rewards_data, pre_1418_data, post_1418_data, disqualified_data):
+    """
+    Merge the rewards data from different sources into a single dictionary.
+
+    Args:
+        existing_data (list): A list of dictionaries containing the existing rewards data.
+        rewards_data (list): A list of dictionaries containing the rewards data.
+        pre_1418_data (list): A list of dictionaries containing the pre-1.4.18 rewards data.
+        post_1418_data (list): A list of dictionaries containing the post-1.4.18 rewards data.
+        disqualified_data (list): A list of dictionaries containing the disqualified peers data.
 
     Returns:
-        tuple: The updated total existing balance and total reward.
+        dict: A dictionary containing the merged rewards data.
     """
-    print(f"Peer ID: {peer['peerId']}")
-    reward = peer.get('reward', 0)
-    total_reward += reward
-    print(f"Reward: {reward}")
+    merged_data = {}
+    index = 0
+    list_name = ["existing_data", "rewards_data", "pre_1418_data", "post_1418_data"]
+    for data_source in [existing_data, rewards_data, pre_1418_data, post_1418_data]:
+        print(f"Processing file...{list_name[index]}")
+        index += 1
+        for peer_data in data_source:
+            peer_id = peer_data['peerId']
+            reward = float(peer_data.get('reward', 0))
 
-    for month, presence in peer.items():
-        if month.endswith('Presence'):
-            print(f"{month.capitalize().replace('presence', '')} Presence: {presence}")
+            if peer_id not in merged_data:
+                merged_data[peer_id] = {
+                    'peerId': peer_id,
+                    'existing_reward': 0,
+                    'rewards_reward': 0,
+                    'pre_1418_reward': 0,
+                    'post_1418_reward': 0,
+                    'total_reward': 0,
+                    'criteria': 'N/A'
+                }
 
-    print(f"Range: {peer.get('range', 'N/A')}")
-    print(f"Criteria: {peer.get('criteria', 'N/A')}")
-    existing_balance = peer.get('existingBalance', 0)
-    total_existing_balance += existing_balance
-    print(f"Existing Balance: {existing_balance}")
-    print("---")
+            if data_source == existing_data:
+                merged_data[peer_id]['existing_reward'] = reward
+            elif data_source == rewards_data:
+                merged_data[peer_id]['rewards_reward'] = reward
+                for month, presence in peer_data.items():
+                    if month.endswith('Presence'):
+                        merged_data[peer_id][month.capitalize()] = presence
+            elif data_source == pre_1418_data:
+                merged_data[peer_id]['pre_1418_reward'] = reward
+            elif data_source == post_1418_data:
+                merged_data[peer_id]['post_1418_reward'] = reward
 
-    return total_existing_balance, total_reward
+            merged_data[peer_id]['total_reward'] += reward
+
+    for peer_data in disqualified_data:
+        peer_id = peer_data['peerId']
+        if peer_id not in merged_data:
+            merged_data[peer_id] = {
+                'peerId': peer_id,
+                'existing_reward': 0,
+                'rewards_reward': 0,
+                'pre_1418_reward': 0,
+                'post_1418_reward': 0,
+                'total_reward': 0,
+                'criteria': 'N/A'
+            }
+
+        merged_data[peer_id]['criteria'] = peer_data.get('criteria', 'N/A')
+
+    return merged_data
 
 def main():
+    existing_url = f"{url}/rewards/existing.json"
+    rewards_url = f"{url}/rewards/rewards.json"
+    pre_1418_url = f"{url}/rewards/pre-1.4.18.json"
+    post_1418_url = f"{url}/rewards/post-1.4.18.json"
+    disqualified_url = f"{url}/rewards/disqualified.json"
 
+    existing_data = load_json_data(existing_url)
+    rewards_data = load_json_data(rewards_url)
+    pre_1418_data = load_json_data(pre_1418_url)
+    post_1418_data = load_json_data(post_1418_url)
+    disqualified_data = load_json_data(disqualified_url)
+
+    all_data = merge_rewards_data(existing_data, rewards_data, pre_1418_data, post_1418_data, disqualified_data)
 
     try:
         javascript_file_url = find_javascript_file_url(url)
-        all_data, last_update = extract_data_from_javascript(javascript_file_url)
+        last_update = extract_last_update_from_javascript(javascript_file_url)
     except ValueError as e:
         print(e)
         return
 
-    parser = argparse.ArgumentParser(description='Find your rewards on Quilibrium website')
-    parser.add_argument('--file', type=str, default='peers.lst', help='File with PeerIds (One by line)')
-    parser.add_argument('--peer_ids', type=str, nargs='+', help='List of PeerId separeted by space')
+    parser = argparse.ArgumentParser(description='Find your rewards on the Quilibrium website')
+    parser.add_argument('--file', type=str, default='peers.lst', help='File with PeerIds (one per line)')
+    parser.add_argument('--peer_ids', type=str, nargs='+', help='List of PeerIds separated by spaces')
     args = parser.parse_args()
 
     peer_ids = load_peer_ids(args)
@@ -283,18 +320,20 @@ def main():
 
     total_existing_balance = 0
     total_reward = 0
-
     for peer_id in peer_ids:
-        peer = search_peer_by_id(peer_id, all_data)
+        peer_data = search_peer_by_id(peer_id, all_data)
 
-        if peer:
-            total_existing_balance, total_reward = print_peer_info(peer, total_existing_balance, total_reward)
+        if peer_data:
+            existing_reward, rewards_reward, pre_1418_reward, post_1418_reward = print_peer_info(peer_id, peer_data)
+            total_existing_balance += existing_reward + rewards_reward
+            total_reward += pre_1418_reward + post_1418_reward
         else:
             print(f"No peer found with ID: {peer_id}")
+        
 
-    print(f"==>\tTotal Existing Balance : {total_existing_balance} QUIL")
-    print(f"==>\tTotal Reward           : {total_reward} QUIL")
-    print(f"==>\tTotal                  : {total_existing_balance + total_reward} QUIL")
+    print(f"==>\tTotal Existing Balance (< 12 May)  : {total_existing_balance} QUIL")
+    print(f"==>\tTotal Reward           (>= 12 May) : {total_reward} QUIL")
+    print(f"==>\tTotal                              : {total_existing_balance + total_reward} QUIL")
     print("---")
 
 if __name__ == "__main__":
