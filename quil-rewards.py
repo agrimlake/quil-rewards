@@ -104,18 +104,16 @@ def get_peer_stats(all_data):
 
         if criteria != 'N/A':
             banned_peers.append(peer_id)
-        elif existing_reward == 0 and rewards_reward == 0 and (pre_1418_reward > 0 or post_1418_reward > 0):    
-            new_peers.append(peer_id)
+        elif post_1418_reward > 0:
+            active_peers.append(peer_id)
         elif post_1418_reward == 0 and pre_1418_reward == 0:
             inactive_peers.append(peer_id)
-        elif pre_1418_reward != 0 and post_1418_reward == 0:
+        elif pre_1418_reward > 0 and post_1418_reward == 0:
             inactive_1418_peers.append(peer_id)
-        elif post_1418_reward != 0:
-            active_peers.append(peer_id)
-        else:
-            print(f"Failure ??? ")
-            print(f"{all_data[peer_id]}")
 
+        if existing_reward == 0 and rewards_reward == 0 and (pre_1418_reward > 0 or post_1418_reward > 0):    
+            new_peers.append(peer_id)
+        
     return len(active_peers), len(inactive_peers), len(inactive_1418_peers), len(banned_peers), len(new_peers)
 
 def search_peer_by_id(peer_id, all_data):
